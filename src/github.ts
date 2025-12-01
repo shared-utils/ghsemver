@@ -51,8 +51,9 @@ export class GitHubClient {
   /**
    * Get latest semantic version tag (vX.Y.Z format)
    * @param branch Optional branch to search tags from
+   * @param stableOnly If true, only return stable versions (no prerelease)
    */
-  async getLatestTag(branch?: string): Promise<string | null> {
+  async getLatestTag(branch?: string, stableOnly: boolean = false): Promise<string | null> {
     try {
       // If branch specified, get tags reachable from that branch
       if (branch) {
@@ -74,7 +75,11 @@ export class GitHubClient {
         
         // Find first semantic version tag that exists in the branch
         for (const tag of tags) {
-          if (/^v\d+\.\d+\.\d+/.test(tag.name) && commitShas.has(tag.commit.sha)) {
+          const matchesFormat = stableOnly 
+            ? /^v\d+\.\d+\.\d+$/.test(tag.name)  // Exact vX.Y.Z
+            : /^v\d+\.\d+\.\d+/.test(tag.name);  // vX.Y.Z or vX.Y.Z-anything
+          
+          if (matchesFormat && commitShas.has(tag.commit.sha)) {
             return tag.name;
           }
         }
@@ -95,7 +100,11 @@ export class GitHubClient {
 
       // Find first tag matching vX.Y.Z format
       for (const tag of data) {
-        if (/^v\d+\.\d+\.\d+/.test(tag.name)) {
+        const matchesFormat = stableOnly 
+          ? /^v\d+\.\d+\.\d+$/.test(tag.name)  // Exact vX.Y.Z
+          : /^v\d+\.\d+\.\d+/.test(tag.name);  // vX.Y.Z or vX.Y.Z-anything
+        
+        if (matchesFormat) {
           return tag.name;
         }
       }

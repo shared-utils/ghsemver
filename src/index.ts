@@ -17,28 +17,55 @@ import { CliOptions } from './types.js';
 export async function getCurrentVersion(options: CliOptions = {}): Promise<string> {
   const log = options.log ? console.error : () => {};
 
-  // Try local git first
-  const localTag = getLocalLatestTag();
-  if (localTag) {
-    log('Source: local git');
-    return normalizeVersion(localTag);
-  }
-
-  // Fallback to GitHub API
+  // Get repository info
   const repoInfo = getRepoInfoFromRemote();
   if (!repoInfo) {
     return '';
   }
 
   const githubClient = new GitHubClient(repoInfo);
-  const remoteTag = await githubClient.getLatestTag();
+
+  // Determine current branch (prefer local)
+  let currentBranch = options.branch || getCurrentBranch();
   
-  if (!remoteTag) {
+  if (!currentBranch) {
+    const currentSha = getCurrentSha();
+    if (currentSha) {
+      currentBranch = await githubClient.getBranchBySha(currentSha);
+    }
+  }
+
+  if (!currentBranch) {
     return '';
   }
 
-  log('Source: GitHub API');
-  return normalizeVersion(remoteTag);
+  // Determine main branch
+  let mainBranch = options.mainBranch;
+  if (!mainBranch) {
+    const defaultBranch = await githubClient.getDefaultBranch();
+    if (!defaultBranch) {
+      return '';
+    }
+    mainBranch = defaultBranch;
+  }
+
+  const isMainBranch = currentBranch === mainBranch;
+
+  // For main branch, only return stable versions (no prerelease)
+  // For other branches, return any version
+  let latestTag = getLocalLatestTag(currentBranch, isMainBranch);
+  let source = 'local git';
+  
+  if (!latestTag) {
+    latestTag = await githubClient.getLatestTag(currentBranch, isMainBranch);
+    source = 'GitHub API';
+  }
+
+  const currentVersion = latestTag ? normalizeVersion(latestTag) : '';
+  log(`${currentVersion}`);
+  log(`Source: ${source}`);
+  
+  return currentVersion;
 }
 
 /**
@@ -88,19 +115,20 @@ export async function getNextVersion(options: CliOptions = {}): Promise<string> 
 
   // 3. Get current version (prefer local)
   // Always get the latest tag from current branch first
-  let latestTag = getLocalLatestTag(currentBranch);
+  // For main branch, only consider stable versions (no prerelease)
+  let latestTag = getLocalLatestTag(currentBranch, isMainBranch);
   let source = 'local git';
   
   if (!latestTag) {
-    latestTag = await githubClient.getLatestTag(currentBranch);
+    latestTag = await githubClient.getLatestTag(currentBranch, isMainBranch);
     source = 'GitHub API';
   }
 
   // For non-main branches, if no tag found on current branch, fallback to main branch
   if (!latestTag && !isMainBranch) {
-    latestTag = getLocalLatestTag(mainBranch);
+    latestTag = getLocalLatestTag(mainBranch, true); // Only stable versions from main
     if (!latestTag) {
-      latestTag = await githubClient.getLatestTag(mainBranch);
+      latestTag = await githubClient.getLatestTag(mainBranch, true);
       source = 'GitHub API';
     }
     source = source + ', from main';

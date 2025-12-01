@@ -62,8 +62,9 @@ export function getRepoInfoFromRemote(): { owner: string; repo: string } | null 
 /**
  * Get latest semantic version tag from local git (vX.Y.Z format)
  * @param branch Optional branch to search tags from
+ * @param stableOnly If true, only return stable versions (no prerelease)
  */
-export function getLatestTag(branch?: string): string | null {
+export function getLatestTag(branch?: string, stableOnly: boolean = false): string | null {
   try {
     let command = 'git tag --sort=-version:refname';
     
@@ -85,8 +86,16 @@ export function getLatestTag(branch?: string): string | null {
     
     // Find first tag matching vX.Y.Z format
     for (const tag of tags) {
-      if (/^v\d+\.\d+\.\d+/.test(tag)) {
-        return tag;
+      if (stableOnly) {
+        // Only match exact vX.Y.Z format (no prerelease suffix)
+        if (/^v\d+\.\d+\.\d+$/.test(tag)) {
+          return tag;
+        }
+      } else {
+        // Match vX.Y.Z or vX.Y.Z-anything
+        if (/^v\d+\.\d+\.\d+/.test(tag)) {
+          return tag;
+        }
       }
     }
     
