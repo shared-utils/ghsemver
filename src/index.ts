@@ -10,6 +10,8 @@ import {
 } from './git.js';
 import { analyzeCommits, calculateNextVersion, normalizeVersion } from './version.js';
 import { CliOptions } from './types.js';
+import { execSync } from 'child_process';
+import semver from 'semver';
 
 /**
  * Get current version
@@ -113,29 +115,17 @@ export async function getNextVersion(options: CliOptions = {}): Promise<string> 
 
   const isMainBranch = currentBranch === mainBranch;
 
-  // 3. Get current version (prefer local)
-  // Always get the latest tag from current branch first
-  // For main branch, only consider stable versions (no prerelease)
-  let latestTag = getLocalLatestTag(currentBranch, isMainBranch);
+  // 3. Get base version from main branch (always use stable version from main)
+  let latestTag = getLocalLatestTag(mainBranch, true); // Only stable versions
   let source = 'local git';
   
   if (!latestTag) {
-    latestTag = await githubClient.getLatestTag(currentBranch, isMainBranch);
+    latestTag = await githubClient.getLatestTag(mainBranch, true);
     source = 'GitHub API';
   }
 
-  // For non-main branches, if no tag found on current branch, fallback to main branch
-  if (!latestTag && !isMainBranch) {
-    latestTag = getLocalLatestTag(mainBranch, true); // Only stable versions from main
-    if (!latestTag) {
-      latestTag = await githubClient.getLatestTag(mainBranch, true);
-      source = 'GitHub API';
-    }
-    source = source + ', from main';
-  }
-
   const currentVersion = latestTag ? normalizeVersion(latestTag) : null;
-  log(`Current version: ${currentVersion || 'none'} (${source})`);
+  log(`Current version: ${currentVersion || 'none'} (${source}, from main)`);
 
 
   // 4. Get commit history (prefer local when complete)
@@ -210,7 +200,7 @@ export async function getNextVersion(options: CliOptions = {}): Promise<string> 
 
   // 6. Calculate next version
   const suffix = !isMainBranch ? options.suffix || currentBranch : undefined;
-  const nextVersion = calculateNextVersion(
+  let nextVersion = calculateNextVersion(
     currentVersion,
     releaseType,
     isMainBranch,
@@ -219,6 +209,51 @@ export async function getNextVersion(options: CliOptions = {}): Promise<string> 
 
   if (!nextVersion) {
     return '';
+  }
+
+  // 7. For non-main branches, check if this prerelease version already exists
+  // If it does, increment the prerelease number
+  if (!isMainBranch) {
+    // Get all tags from current branch (including prerelease)
+    const allTagsOutput = execSync(`git tag --sort=-version:refname --merged ${currentBranch}`, {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+    
+    if (allTagsOutput) {
+      const allTags = allTagsOutput.split('\n')
+        .filter((tag: string) => /^v\d+\.\d+\.\d+/.test(tag))
+        .map((tag: string) => normalizeVersion(tag));
+      
+      const nextParsed = semver.parse(nextVersion);
+      if (nextParsed) {
+        // Find all existing prerelease versions with same base
+        const baseVersion = `${nextParsed.major}.${nextParsed.minor}.${nextParsed.patch}`;
+        const prereleaseId = nextParsed.prerelease[0]; // e.g., 'next'
+        
+        let maxPrereleaseNumber = 0;
+        for (const tag of allTags) {
+          const tagParsed = semver.parse(tag);
+          if (tagParsed && tagParsed.prerelease.length >= 2) {
+            const tagBase = `${tagParsed.major}.${tagParsed.minor}.${tagParsed.patch}`;
+            const tagPrereleaseId = tagParsed.prerelease[0];
+            const tagPrereleaseNum = tagParsed.prerelease[1];
+            
+            if (tagBase === baseVersion && 
+                tagPrereleaseId === prereleaseId && 
+                typeof tagPrereleaseNum === 'number') {
+              maxPrereleaseNumber = Math.max(maxPrereleaseNumber, tagPrereleaseNum);
+            }
+          }
+        }
+        
+        // If we found existing prerelease versions, increment the number
+        if (maxPrereleaseNumber > 0) {
+          nextVersion = `${baseVersion}-${prereleaseId}.${maxPrereleaseNumber + 1}`;
+          log(`Found existing prerelease versions, incrementing to ${nextVersion}`);
+        }
+      }
+    }
   }
 
   return nextVersion;

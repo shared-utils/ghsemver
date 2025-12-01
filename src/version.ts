@@ -86,22 +86,13 @@ export function calculateNextVersion(
   }
 
   // Start from 0.0.0 if no current version
-  let baseVersion = currentVersion || '0.0.0';
-  
-  // Check if current version is a prerelease
-  const parsed = semver.parse(baseVersion);
-  const isCurrentPrerelease = parsed && parsed.prerelease.length > 0;
+  const baseVersion = currentVersion || '0.0.0';
 
-  // Calculate new version
+  // Calculate new version (always from stable base version)
   let nextVersion: string | null = null;
 
   if (isMainBranch) {
     // Main branch: stable version
-    // Always remove prerelease tags for main branch
-    if (isCurrentPrerelease && parsed) {
-      baseVersion = `${parsed.major}.${parsed.minor}.${parsed.patch}`;
-    }
-    
     switch (releaseType) {
       case ReleaseType.MAJOR:
         nextVersion = semver.inc(baseVersion, 'major');
@@ -117,36 +108,26 @@ export function calculateNextVersion(
     // Non-main branch: prerelease version
     const prereleaseId = suffix || 'dev';
 
-    // If current version is already a prerelease, just increment the prerelease number
-    if (isCurrentPrerelease) {
-      nextVersion = semver.inc(baseVersion, 'prerelease', prereleaseId);
-    } else {
-      // Current version is stable, create new prerelease
-      switch (releaseType) {
-        case ReleaseType.MAJOR:
-          nextVersion = semver.inc(baseVersion, 'premajor', prereleaseId);
-          break;
-        case ReleaseType.MINOR:
-          nextVersion = semver.inc(baseVersion, 'preminor', prereleaseId);
-          break;
-        case ReleaseType.PATCH:
-          nextVersion = semver.inc(baseVersion, 'prepatch', prereleaseId);
-          break;
-      }
-      
-      // Change prerelease number from 0 to 1
-      if (nextVersion) {
-        const parsed = semver.parse(nextVersion);
-        if (parsed && parsed.prerelease.length > 0) {
-          const lastPart = parsed.prerelease[parsed.prerelease.length - 1];
-          if (lastPart === 0) {
-            const newPrerelease = [...parsed.prerelease];
-            newPrerelease[newPrerelease.length - 1] = 1;
-            nextVersion = `${parsed.major}.${parsed.minor}.${parsed.patch}-${newPrerelease.join('.')}`;
-          }
-        }
-      }
+    // Calculate what the next stable version would be
+    let nextStableVersion: string | null = null;
+    switch (releaseType) {
+      case ReleaseType.MAJOR:
+        nextStableVersion = semver.inc(baseVersion, 'major');
+        break;
+      case ReleaseType.MINOR:
+        nextStableVersion = semver.inc(baseVersion, 'minor');
+        break;
+      case ReleaseType.PATCH:
+        nextStableVersion = semver.inc(baseVersion, 'patch');
+        break;
     }
+
+    if (!nextStableVersion) {
+      return null;
+    }
+
+    // Format: nextStableVersion-suffix.1
+    nextVersion = `${nextStableVersion}-${prereleaseId}.1`;
   }
 
   return nextVersion;
