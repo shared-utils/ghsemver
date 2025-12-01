@@ -87,19 +87,27 @@ export async function getNextVersion(options: CliOptions = {}): Promise<string> 
   const isMainBranch = currentBranch === mainBranch;
 
   // 3. Get current version (prefer local)
-  // For non-main branches, get the latest tag from main branch
-  const branchToCheck = isMainBranch ? currentBranch : mainBranch;
-  
-  let latestTag = getLocalLatestTag(branchToCheck);
+  // Always get the latest tag from current branch first
+  let latestTag = getLocalLatestTag(currentBranch);
   let source = 'local git';
   
   if (!latestTag) {
-    latestTag = await githubClient.getLatestTag(branchToCheck);
+    latestTag = await githubClient.getLatestTag(currentBranch);
     source = 'GitHub API';
   }
 
+  // For non-main branches, if no tag found on current branch, fallback to main branch
+  if (!latestTag && !isMainBranch) {
+    latestTag = getLocalLatestTag(mainBranch);
+    if (!latestTag) {
+      latestTag = await githubClient.getLatestTag(mainBranch);
+      source = 'GitHub API';
+    }
+    source = source + ', from main';
+  }
+
   const currentVersion = latestTag ? normalizeVersion(latestTag) : null;
-  log(`Current version: ${currentVersion || 'none'} (${source}${!isMainBranch ? `, from ${mainBranch}` : ''})`);
+  log(`Current version: ${currentVersion || 'none'} (${source})`);
 
 
   // 4. Get commit history (prefer local when complete)
