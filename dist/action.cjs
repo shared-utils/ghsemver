@@ -26291,9 +26291,7 @@ async function run() {
       return;
     }
     core.setOutput("version", version);
-    if (log || version) {
-      console.log(`Version: ${version}`);
-    }
+    console.log(`Version: ${version}`);
   } catch (error) {
     core.setFailed(error instanceof Error ? error.message : String(error));
   }

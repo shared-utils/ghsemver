@@ -23,7 +23,7 @@ inputs:
   log:
     description: 'Enable verbose logging'
     required: false
-    default: 'false'
+    default: 'true'
 
 outputs:
   version:

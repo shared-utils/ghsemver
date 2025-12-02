@@ -34,10 +34,8 @@ async function run() {
     // Set output
     core.setOutput('version', version);
 
-    // Also log to console
-    if (log || version) {
-      console.log(`Version: ${version}`);
-    }
+    // Always log version output in Action
+    console.log(`Version: ${version}`);
   } catch (error) {
     core.setFailed(error instanceof Error ? error.message : String(error));
   }
