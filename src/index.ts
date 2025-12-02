@@ -115,18 +115,50 @@ export async function getNextVersion(options: CliOptions = {}): Promise<string> 
 
   const isMainBranch = currentBranch === mainBranch;
 
-  // 3. Get base version from main branch (always use stable version from main)
-  let latestTag = getLocalLatestTag(mainBranch, true); // Only stable versions
+  // 3. Determine base tag for version calculation
+  let latestTag: string | null = null;
   let source = 'local git';
+  let baseVersion: string | null = null;
   
-  if (!latestTag) {
-    latestTag = await githubClient.getLatestTag(mainBranch, true);
-    source = 'GitHub API';
+  if (isMainBranch) {
+    // Main branch: use latest stable version
+    latestTag = getLocalLatestTag(mainBranch, true);
+    if (!latestTag) {
+      latestTag = await githubClient.getLatestTag(mainBranch, true);
+      source = 'GitHub API';
+    }
+    baseVersion = latestTag ? normalizeVersion(latestTag) : null;
+    log(`Current version: ${baseVersion || 'none'} (${source}, from main)`);
+  } else {
+    // Non-main branch: check if there's already a prerelease tag on this branch
+    let branchPrereleaseTag = getLocalLatestTag(currentBranch, false);
+    if (!branchPrereleaseTag) {
+      branchPrereleaseTag = await githubClient.getLatestTag(currentBranch, false);
+      source = branchPrereleaseTag ? 'GitHub API' : source;
+    }
+    
+    // If current branch has prerelease tag, use it as base
+    if (branchPrereleaseTag) {
+      const parsed = semver.parse(normalizeVersion(branchPrereleaseTag));
+      if (parsed && parsed.prerelease.length > 0) {
+        // This is a prerelease tag, use it as base
+        latestTag = branchPrereleaseTag;
+        baseVersion = normalizeVersion(branchPrereleaseTag);
+        log(`Current version: ${baseVersion} (${source}, from current branch)`);
+      }
+    }
+    
+    // If no prerelease tag found, use main branch's stable version
+    if (!latestTag) {
+      latestTag = getLocalLatestTag(mainBranch, true);
+      if (!latestTag) {
+        latestTag = await githubClient.getLatestTag(mainBranch, true);
+        source = 'GitHub API';
+      }
+      baseVersion = latestTag ? normalizeVersion(latestTag) : null;
+      log(`Current version: ${baseVersion || 'none'} (${source}, from main)`);
+    }
   }
-
-  const currentVersion = latestTag ? normalizeVersion(latestTag) : null;
-  log(`Current version: ${currentVersion || 'none'} (${source}, from main)`);
-
 
   // 4. Get commit history (prefer local when complete)
   let baseCommitSha: string | null = null;
@@ -200,8 +232,19 @@ export async function getNextVersion(options: CliOptions = {}): Promise<string> 
 
   // 6. Calculate next version
   const suffix = !isMainBranch ? options.suffix || currentBranch : undefined;
+  
+  // For non-main branches with existing prerelease, extract the stable base version
+  let versionForCalculation = baseVersion;
+  if (!isMainBranch && baseVersion) {
+    const parsed = semver.parse(baseVersion);
+    if (parsed && parsed.prerelease.length > 0) {
+      // Extract stable version from prerelease (e.g., 1.4.2-next.4 -> 1.4.2)
+      versionForCalculation = `${parsed.major}.${parsed.minor}.${parsed.patch}`;
+    }
+  }
+  
   let nextVersion = calculateNextVersion(
-    currentVersion,
+    versionForCalculation,
     releaseType,
     isMainBranch,
     suffix,
