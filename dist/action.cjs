@@ -26230,10 +26230,7 @@ async function getNextVersion(options = {}) {
     isMainBranch,
     suffix
   );
-  if (!nextVersion) {
-    return "";
-  }
-  if (!isMainBranch) {
+  if (!isMainBranch && nextVersion) {
     const allTagsOutput = (0, import_child_process2.execSync)(`git tag --sort=-version:refname --merged ${currentBranch}`, {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "ignore"]
@@ -26263,7 +26260,7 @@ async function getNextVersion(options = {}) {
       }
     }
   }
-  return nextVersion;
+  return nextVersion || "";
 }
 
 // src/action.ts

@@ -207,13 +207,9 @@ export async function getNextVersion(options: CliOptions = {}): Promise<string> 
     suffix,
   );
 
-  if (!nextVersion) {
-    return '';
-  }
-
   // 7. For non-main branches, check if this prerelease version already exists
   // If it does, increment the prerelease number
-  if (!isMainBranch) {
+  if (!isMainBranch && nextVersion) {
     // Get all tags from current branch (including prerelease)
     const allTagsOutput = execSync(`git tag --sort=-version:refname --merged ${currentBranch}`, {
       encoding: 'utf-8',
@@ -256,6 +252,6 @@ export async function getNextVersion(options: CliOptions = {}): Promise<string> 
     }
   }
 
-  return nextVersion;
+  return nextVersion || '';
 }
 
