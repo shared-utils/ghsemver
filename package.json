@@ -38,7 +38,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "esbuild src/cli.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/cli.js --sourcemap && esbuild src/action.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/action.js --sourcemap && (echo '#!/usr/bin/env node' && cat dist/cli.js) > dist/cli.tmp && mv dist/cli.tmp dist/cli.js && chmod +x dist/cli.js",
+    "build": "esbuild src/cli.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/cli.js --sourcemap && esbuild src/action.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/action.js --sourcemap && chmod +x dist/cli.js",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run clean && npm run build"
