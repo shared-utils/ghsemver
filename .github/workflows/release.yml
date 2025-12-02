@@ -31,7 +31,7 @@ jobs:
         run: npm ci
 
       - name: Build
-        run: npm run build:all
+        run: npm run build
 
       - name: Commit dist for GitHub Action
         run: |

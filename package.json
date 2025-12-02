@@ -38,9 +38,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsc && chmod +x dist/cli.js",
-    "build:action": "ncc build dist/action.js -o dist/action-bundle --source-map --license licenses.txt",
-    "build:all": "npm run build && npm run build:action",
+    "build": "tsc && chmod +x dist/cli.js && ncc build dist/action.js -o dist/action-bundle --source-map --license licenses.txt",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run clean && npm run build"
