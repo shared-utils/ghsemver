@@ -27,7 +27,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "ghsemver": "dist/cli.js"
+    "ghsemver": "dist/cli.cjs"
   },
   "files": [
     "dist",
@@ -38,7 +38,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "esbuild src/cli.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/cli.js --sourcemap && esbuild src/action.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/action.js --sourcemap && chmod +x dist/cli.js",
+    "build": "esbuild src/cli.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/cli.cjs --sourcemap && esbuild src/action.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/action.cjs --sourcemap && chmod +x dist/cli.cjs",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run clean && npm run build"
