@@ -42,4 +42,5 @@ jobs:
           log: true
 
       - name: Display custom result
-        run: echo "Custom version: ${{ steps.custom.outputs.version }}"
+        run: |
+          echo "Custom version: ${{ steps.custom.outputs.version }}"
