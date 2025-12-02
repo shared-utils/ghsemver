@@ -1,0 +1,79 @@
+name: 'ghsemver'
+description: 'Calculate semantic version based on GitHub commit history and Conventional Commits'
+author: 'shared-utils'
+
+branding:
+  icon: 'tag'
+  color: 'blue'
+
+inputs:
+  command:
+    description: 'Command to run: current or next'
+    required: true
+    default: 'next'
+  branch:
+    description: 'Branch name (optional, auto-detected if not provided)'
+    required: false
+  main-branch:
+    description: 'Main branch name (optional, auto-detected if not provided)'
+    required: false
+  suffix:
+    description: 'Prerelease suffix for non-main branches (optional, uses branch name if not provided)'
+    required: false
+  log:
+    description: 'Enable verbose logging'
+    required: false
+    default: 'false'
+
+outputs:
+  version:
+    description: 'The calculated version number'
+    value: ${{ steps.ghsemver.outputs.version }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Run ghsemver
+      id: ghsemver
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        # Install ghsemver globally
+        npm install -g ghsemver@latest
+        
+        # Build command
+        CMD="ghsemver ${{ inputs.command }}"
+        
+        if [ -n "${{ inputs.branch }}" ]; then
+          CMD="$CMD --branch ${{ inputs.branch }}"
+        fi
+        
+        if [ -n "${{ inputs.main-branch }}" ]; then
+          CMD="$CMD --main-branch ${{ inputs.main-branch }}"
+        fi
+        
+        if [ -n "${{ inputs.suffix }}" ]; then
+          CMD="$CMD --suffix ${{ inputs.suffix }}"
+        fi
+        
+        if [ "${{ inputs.log }}" = "true" ]; then
+          CMD="$CMD --log"
+        fi
+        
+        # Run command and capture output
+        VERSION=$($CMD)
+        
+        # Set output
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        
+        # Also print to console
+        if [ "${{ inputs.log }}" = "true" ] || [ -n "$VERSION" ]; then
+          echo "Version: $VERSION"
+        fi
+

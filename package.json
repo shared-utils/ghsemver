@@ -32,6 +32,8 @@
   "files": [
     "dist",
     "README.md",
+    "ACTION.md",
+    "action.yml",
     "LICENSE",
     "CHANGELOG.md"
   ],

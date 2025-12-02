@@ -1,0 +1,36 @@
+name: Test Action
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  test-action:
+    runs-on: ubuntu-latest
+    name: Test ghsemver Action
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test current version
+        id: current
+        uses: ./
+        with:
+          command: current
+          log: true
+
+      - name: Test next version
+        id: next
+        uses: ./
+        with:
+          command: next
+          log: true
+
+      - name: Display results
+        run: |
+          echo "Current version: ${{ steps.current.outputs.version }}"
+          echo "Next version: ${{ steps.next.outputs.version }}"
+
