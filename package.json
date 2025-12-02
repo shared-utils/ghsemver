@@ -44,6 +44,7 @@
     "prepublishOnly": "npm run clean && npm run build"
   },
   "dependencies": {
+    "@actions/core": "^1.11.1",
     "@octokit/rest": "^20.0.2",
     "commander": "^11.1.0",
     "semver": "^7.5.4"

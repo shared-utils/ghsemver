@@ -28,52 +28,8 @@ inputs:
 outputs:
   version:
     description: 'The calculated version number'
-    value: ${{ steps.ghsemver.outputs.version }}
 
 runs:
-  using: 'composite'
-  steps:
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-    
-    - name: Run ghsemver
-      id: ghsemver
-      shell: bash
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-      run: |
-        # Install ghsemver globally
-        npm install -g ghsemver@latest
-        
-        # Build command
-        CMD="ghsemver ${{ inputs.command }}"
-        
-        if [ -n "${{ inputs.branch }}" ]; then
-          CMD="$CMD --branch ${{ inputs.branch }}"
-        fi
-        
-        if [ -n "${{ inputs.main-branch }}" ]; then
-          CMD="$CMD --main-branch ${{ inputs.main-branch }}"
-        fi
-        
-        if [ -n "${{ inputs.suffix }}" ]; then
-          CMD="$CMD --suffix ${{ inputs.suffix }}"
-        fi
-        
-        if [ "${{ inputs.log }}" = "true" ]; then
-          CMD="$CMD --log"
-        fi
-        
-        # Run command and capture output
-        VERSION=$($CMD)
-        
-        # Set output
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-        
-        # Also print to console
-        if [ "${{ inputs.log }}" = "true" ] || [ -n "$VERSION" ]; then
-          echo "Version: $VERSION"
-        fi
+  using: 'node20'
+  main: 'dist/action.js'
 
