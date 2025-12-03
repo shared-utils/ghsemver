@@ -9,7 +9,7 @@ import {
   commitExists,
 } from './git.js';
 import { analyzeCommits, calculateNextVersion, normalizeVersion } from './version.js';
-import { CliOptions } from './types.js';
+import { CliOptions, ReleaseType } from './types.js';
 import { execSync } from 'child_process';
 import semver from 'semver';
 
@@ -115,50 +115,17 @@ export async function getNextVersion(options: CliOptions = {}): Promise<string> 
 
   const isMainBranch = currentBranch === mainBranch;
 
-  // 3. Determine base tag for version calculation
-  let latestTag: string | null = null;
+  // 3. Always use main branch's latest stable version as base
+  let latestTag = getLocalLatestTag(mainBranch, true); // Only stable versions
   let source = 'local git';
-  let baseVersion: string | null = null;
   
-  if (isMainBranch) {
-    // Main branch: use latest stable version
-    latestTag = getLocalLatestTag(mainBranch, true);
-    if (!latestTag) {
-      latestTag = await githubClient.getLatestTag(mainBranch, true);
-      source = 'GitHub API';
-    }
-    baseVersion = latestTag ? normalizeVersion(latestTag) : null;
-    log(`Current version: ${baseVersion || 'none'} (${source}, from main)`);
-  } else {
-    // Non-main branch: check if there's already a prerelease tag on this branch
-    let branchPrereleaseTag = getLocalLatestTag(currentBranch, false);
-    if (!branchPrereleaseTag) {
-      branchPrereleaseTag = await githubClient.getLatestTag(currentBranch, false);
-      source = branchPrereleaseTag ? 'GitHub API' : source;
-    }
-    
-    // If current branch has prerelease tag, use it as base
-    if (branchPrereleaseTag) {
-      const parsed = semver.parse(normalizeVersion(branchPrereleaseTag));
-      if (parsed && parsed.prerelease.length > 0) {
-        // This is a prerelease tag, use it as base
-        latestTag = branchPrereleaseTag;
-        baseVersion = normalizeVersion(branchPrereleaseTag);
-        log(`Current version: ${baseVersion} (${source}, from current branch)`);
-      }
-    }
-    
-    // If no prerelease tag found, use main branch's stable version
-    if (!latestTag) {
-      latestTag = getLocalLatestTag(mainBranch, true);
-      if (!latestTag) {
-        latestTag = await githubClient.getLatestTag(mainBranch, true);
-        source = 'GitHub API';
-      }
-      baseVersion = latestTag ? normalizeVersion(latestTag) : null;
-      log(`Current version: ${baseVersion || 'none'} (${source}, from main)`);
-    }
+  if (!latestTag) {
+    latestTag = await githubClient.getLatestTag(mainBranch, true);
+    source = 'GitHub API';
   }
+
+  const baseVersion = latestTag ? normalizeVersion(latestTag) : null;
+  log(`Base version: ${baseVersion || 'none'} (${source}, from main)`);
 
   // 4. Get commit history (prefer local when complete)
   let baseCommitSha: string | null = null;
@@ -230,28 +197,16 @@ export async function getNextVersion(options: CliOptions = {}): Promise<string> 
   const releaseType = analyzeCommits(commits);
   log(`Release type: ${releaseType}`);
 
-  // 6. Calculate next version
+  // 6. Calculate next version based on main branch's stable version
   const suffix = !isMainBranch ? options.suffix || currentBranch : undefined;
-  
-  // For non-main branches with existing prerelease, extract the stable base version
-  let versionForCalculation = baseVersion;
-  if (!isMainBranch && baseVersion) {
-    const parsed = semver.parse(baseVersion);
-    if (parsed && parsed.prerelease.length > 0) {
-      // Extract stable version from prerelease (e.g., 1.4.2-next.4 -> 1.4.2)
-      versionForCalculation = `${parsed.major}.${parsed.minor}.${parsed.patch}`;
-    }
-  }
-  
   let nextVersion = calculateNextVersion(
-    versionForCalculation,
+    baseVersion,
     releaseType,
     isMainBranch,
     suffix,
   );
 
-  // 7. For non-main branches, check if this prerelease version already exists
-  // If it does, increment the prerelease number
+  // 7. For non-main branches, check if prerelease version already exists
   if (!isMainBranch && nextVersion) {
     // Get all tags from current branch (including prerelease)
     const allTagsOutput = execSync(`git tag --sort=-version:refname --merged ${currentBranch}`, {
@@ -266,11 +221,13 @@ export async function getNextVersion(options: CliOptions = {}): Promise<string> 
       
       const nextParsed = semver.parse(nextVersion);
       if (nextParsed) {
-        // Find all existing prerelease versions with same base
-        const baseVersion = `${nextParsed.major}.${nextParsed.minor}.${nextParsed.patch}`;
+        const targetBase = `${nextParsed.major}.${nextParsed.minor}.${nextParsed.patch}`;
         const prereleaseId = nextParsed.prerelease[0]; // e.g., 'next'
         
+        // Find the highest existing prerelease tag with same base
         let maxPrereleaseNumber = 0;
+        let latestPrereleaseTag: string | null = null;
+        
         for (const tag of allTags) {
           const tagParsed = semver.parse(tag);
           if (tagParsed && tagParsed.prerelease.length >= 2) {
@@ -278,18 +235,45 @@ export async function getNextVersion(options: CliOptions = {}): Promise<string> 
             const tagPrereleaseId = tagParsed.prerelease[0];
             const tagPrereleaseNum = tagParsed.prerelease[1];
             
-            if (tagBase === baseVersion && 
+            if (tagBase === targetBase && 
                 tagPrereleaseId === prereleaseId && 
-                typeof tagPrereleaseNum === 'number') {
-              maxPrereleaseNumber = Math.max(maxPrereleaseNumber, tagPrereleaseNum);
+                typeof tagPrereleaseNum === 'number' &&
+                tagPrereleaseNum > maxPrereleaseNumber) {
+              maxPrereleaseNumber = tagPrereleaseNum;
+              latestPrereleaseTag = `v${tag}`;
             }
           }
         }
         
-        // If we found existing prerelease versions, increment the number
-        if (maxPrereleaseNumber > 0) {
-          nextVersion = `${baseVersion}-${prereleaseId}.${maxPrereleaseNumber + 1}`;
-          log(`Found existing prerelease versions, incrementing to ${nextVersion}`);
+        // If prerelease version exists, check if there are new commits since it
+        if (maxPrereleaseNumber > 0 && latestPrereleaseTag) {
+          log(`Found existing prerelease: ${latestPrereleaseTag}`);
+          
+          // Get commits since the latest prerelease tag
+          const prereleaseTagSha = getLocalTagCommitSha(latestPrereleaseTag) || 
+                                   await githubClient.getTagCommitSha(latestPrereleaseTag);
+          
+          if (prereleaseTagSha) {
+            // Analyze commits since the prerelease tag
+            const newCommits = canUseLocal && commitExists(prereleaseTagSha)
+              ? getLocalCommits(prereleaseTagSha, headCommitSha)
+              : await githubClient.getCommitsBetween(prereleaseTagSha, headCommitSha);
+            
+            const newReleaseType = analyzeCommits(newCommits);
+            log(`Commits since ${latestPrereleaseTag}: ${newCommits.length}, type: ${newReleaseType}`);
+            
+            // Only bump if there are qualifying commits
+            if (newReleaseType !== ReleaseType.NONE) {
+              nextVersion = `${targetBase}-${prereleaseId}.${maxPrereleaseNumber + 1}`;
+              log(`Incrementing to ${nextVersion}`);
+            } else {
+              // No qualifying commits since last prerelease
+              return '';
+            }
+          } else {
+            // Can't get prerelease tag SHA, increment anyway
+            nextVersion = `${targetBase}-${prereleaseId}.${maxPrereleaseNumber + 1}`;
+          }
         }
       }
     }

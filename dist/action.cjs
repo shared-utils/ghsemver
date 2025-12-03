@@ -26169,41 +26169,14 @@ async function getNextVersion(options = {}) {
   }
   log(`Main branch: ${mainBranch}`);
   const isMainBranch = currentBranch === mainBranch;
-  let latestTag = null;
+  let latestTag = getLatestTag(mainBranch, true);
   let source = "local git";
-  let baseVersion = null;
-  if (isMainBranch) {
-    latestTag = getLatestTag(mainBranch, true);
-    if (!latestTag) {
-      latestTag = await githubClient.getLatestTag(mainBranch, true);
-      source = "GitHub API";
-    }
-    baseVersion = latestTag ? normalizeVersion(latestTag) : null;
-    log(`Current version: ${baseVersion || "none"} (${source}, from main)`);
-  } else {
-    let branchPrereleaseTag = getLatestTag(currentBranch, false);
-    if (!branchPrereleaseTag) {
-      branchPrereleaseTag = await githubClient.getLatestTag(currentBranch, false);
-      source = branchPrereleaseTag ? "GitHub API" : source;
-    }
-    if (branchPrereleaseTag) {
-      const parsed = import_semver2.default.parse(normalizeVersion(branchPrereleaseTag));
-      if (parsed && parsed.prerelease.length > 0) {
-        latestTag = branchPrereleaseTag;
-        baseVersion = normalizeVersion(branchPrereleaseTag);
-        log(`Current version: ${baseVersion} (${source}, from current branch)`);
-      }
-    }
-    if (!latestTag) {
-      latestTag = getLatestTag(mainBranch, true);
-      if (!latestTag) {
-        latestTag = await githubClient.getLatestTag(mainBranch, true);
-        source = "GitHub API";
-      }
-      baseVersion = latestTag ? normalizeVersion(latestTag) : null;
-      log(`Current version: ${baseVersion || "none"} (${source}, from main)`);
-    }
+  if (!latestTag) {
+    latestTag = await githubClient.getLatestTag(mainBranch, true);
+    source = "GitHub API";
   }
+  const baseVersion = latestTag ? normalizeVersion(latestTag) : null;
+  log(`Base version: ${baseVersion || "none"} (${source}, from main)`);
   let baseCommitSha = null;
   let tagSource = "none";
   if (latestTag) {
@@ -26251,15 +26224,8 @@ async function getNextVersion(options = {}) {
   const releaseType = analyzeCommits(commits);
   log(`Release type: ${releaseType}`);
   const suffix = !isMainBranch ? options.suffix || currentBranch : void 0;
-  let versionForCalculation = baseVersion;
-  if (!isMainBranch && baseVersion) {
-    const parsed = import_semver2.default.parse(baseVersion);
-    if (parsed && parsed.prerelease.length > 0) {
-      versionForCalculation = `${parsed.major}.${parsed.minor}.${parsed.patch}`;
-    }
-  }
   let nextVersion = calculateNextVersion(
-    versionForCalculation,
+    baseVersion,
     releaseType,
     isMainBranch,
     suffix
@@ -26273,23 +26239,38 @@ async function getNextVersion(options = {}) {
       const allTags = allTagsOutput.split("\n").filter((tag) => /^v\d+\.\d+\.\d+/.test(tag)).map((tag) => normalizeVersion(tag));
       const nextParsed = import_semver2.default.parse(nextVersion);
       if (nextParsed) {
-        const baseVersion2 = `${nextParsed.major}.${nextParsed.minor}.${nextParsed.patch}`;
+        const targetBase = `${nextParsed.major}.${nextParsed.minor}.${nextParsed.patch}`;
         const prereleaseId = nextParsed.prerelease[0];
         let maxPrereleaseNumber = 0;
+        let latestPrereleaseTag = null;
         for (const tag of allTags) {
           const tagParsed = import_semver2.default.parse(tag);
           if (tagParsed && tagParsed.prerelease.length >= 2) {
             const tagBase = `${tagParsed.major}.${tagParsed.minor}.${tagParsed.patch}`;
             const tagPrereleaseId = tagParsed.prerelease[0];
             const tagPrereleaseNum = tagParsed.prerelease[1];
-            if (tagBase === baseVersion2 && tagPrereleaseId === prereleaseId && typeof tagPrereleaseNum === "number") {
-              maxPrereleaseNumber = Math.max(maxPrereleaseNumber, tagPrereleaseNum);
+            if (tagBase === targetBase && tagPrereleaseId === prereleaseId && typeof tagPrereleaseNum === "number" && tagPrereleaseNum > maxPrereleaseNumber) {
+              maxPrereleaseNumber = tagPrereleaseNum;
+              latestPrereleaseTag = `v${tag}`;
             }
           }
         }
-        if (maxPrereleaseNumber > 0) {
-          nextVersion = `${baseVersion2}-${prereleaseId}.${maxPrereleaseNumber + 1}`;
-          log(`Found existing prerelease versions, incrementing to ${nextVersion}`);
+        if (maxPrereleaseNumber > 0 && latestPrereleaseTag) {
+          log(`Found existing prerelease: ${latestPrereleaseTag}`);
+          const prereleaseTagSha = getTagCommitSha(latestPrereleaseTag) || await githubClient.getTagCommitSha(latestPrereleaseTag);
+          if (prereleaseTagSha) {
+            const newCommits = canUseLocal && commitExists(prereleaseTagSha) ? getLocalCommits(prereleaseTagSha, headCommitSha) : await githubClient.getCommitsBetween(prereleaseTagSha, headCommitSha);
+            const newReleaseType = analyzeCommits(newCommits);
+            log(`Commits since ${latestPrereleaseTag}: ${newCommits.length}, type: ${newReleaseType}`);
+            if (newReleaseType !== "none" /* NONE */) {
+              nextVersion = `${targetBase}-${prereleaseId}.${maxPrereleaseNumber + 1}`;
+              log(`Incrementing to ${nextVersion}`);
+            } else {
+              return "";
+            }
+          } else {
+            nextVersion = `${targetBase}-${prereleaseId}.${maxPrereleaseNumber + 1}`;
+          }
         }
       }
     }
